@@ -21,7 +21,7 @@ def setup_db(conn: sqlite3.Connection):
     # Новая схема для occupied_rooms
     cur.execute("""
         CREATE TABLE occupied_rooms (
-            schedule_id INTEGER,              -- 👈 добавлено поле
+            schedule_id INTEGER,       
             week        INTEGER,
             day         TEXT,
             start_time  TEXT,

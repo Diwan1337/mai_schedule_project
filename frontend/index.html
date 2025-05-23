@@ -2,72 +2,178 @@
 <html lang="ru">
 <head>
   <meta charset="UTF-8">
-  <title>Расписание МАИ</title>
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <link href="style.css" rel="stylesheet">
-  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
-  <link href="https://code.jquery.com/ui/1.13.2/themes/base/jquery-ui.css" rel="stylesheet">
+  <title>✈️ Расписание IT-кабинетов МАИ</title>
+  <link rel="stylesheet" href="style.css">
+  <!-- Bootstrap 4.6 CSS -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@4.6.2/dist/css/bootstrap.min.css">
+  <!-- jQuery UI (for datepicker & autocomplete) CSS -->
+  <link rel="stylesheet" href="https://code.jquery.com/ui/1.13.2/themes/base/jquery-ui.css">
 </head>
 <body>
-  <div class="container glass mt-5">
-    <h1 class="text-center mb-4">✈️ Расписание МАИ</h1>
-    <!-- Авторизация -->
-    <div class="mb-3">
-      <h5>🔐 Вход</h5>
-      <div class="row g-2">
-        <div class="col-md-5"><input id="email" class="form-control" placeholder="Email"></div>
-        <div class="col-md-5"><input id="password" type="password" class="form-control" placeholder="Пароль"></div>
-        <div class="col-md-2"><button class="btn btn-primary w-100" onclick="login()">Войти</button></div>
+  <!-- Навигация -->
+  <nav class="navbar navbar-expand-lg navbar-light bg-light">
+    <a class="navbar-brand" href="#">✈️ Расписание IT-кабинетов МАИ</a>
+    <div class="collapse navbar-collapse">
+      <ul class="navbar-nav ml-auto">
+        <li class="nav-item">
+          <a id="loginLink" class="nav-link" href="#" data-toggle="modal" data-target="#loginModal">Вход</a>
+        </li>
+        <li class="nav-item">
+          <a id="registerLink" class="nav-link" href="#" data-toggle="modal" data-target="#registerModal">Регистрация</a>
+        </li>
+        <li class="nav-item">
+          <a id="logoutLink" class="nav-link d-none" href="#">Выход</a>
+        </li>
+        <li class="nav-item d-none" id="manageUsersNav">
+          <a class="nav-link" href="#" data-toggle="modal" data-target="#usersModal">Пользователи</a>
+        </li>        
+      </ul>
+    </div>
+  </nav>
+
+  <div class="container">
+    <!-- Стартовый экран выбора кабинета и недели -->
+    <div id="roomsTab">
+      <div class="row mb-3 align-items-center">
+        <div class="col-md-3">
+          <select id="roomSelect" class="form-control">
+            <option value="">Кабинет</option>
+          </select>
+        </div>
+        <div class="col-md-3">
+          <select id="roomWeekInput" class="form-control">
+            <option value="">Неделя</option>
+          </select>
+        </div>
+        <div class="col-md-3">
+          <button id="loadRoomsBtn" class="btn btn-primary w-100" onclick="loadRooms()" disabled>Показать</button>
+        </div>
       </div>
-      <small id="loginStatus" class="text-success"></small>
+      <!-- Статус свободности сейчас -->
+      <div id="freeStatus"></div>
+      <button id="addBtn" class="btn btn-success mb-3 d-none" data-toggle="modal" data-target="#addModal">➕ Добавить пару</button>
+      <!-- Таблица расписания кабинета -->
+      <div class="table-responsive">
+        <table id="roomsTable" class="table table-striped d-none">
+          <thead class="thead-light">
+            <tr>
+              <th>День</th>
+              <th>Время</th>
+              <th>Предмет</th>
+              <th>Преподаватель</th>
+              <th>Группа</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="roomsBody">
+          </tbody>
+        </table>
+      </div>
     </div>
-    <!-- Фильтр расписания -->
-    <div class="row mb-3">
-      <div class="col-md-4"><input id="groupInput" class="form-control" placeholder="Начните вводить группу..."></div>
-      <div class="col-md-2"><select id="weekInput" class="form-select"><option value="">Неделя</option></select></div>
-      <div class="col-md-2"><button class="btn btn-secondary w-100" onclick="loadSchedule()">Загрузить</button></div>
-      <div class="col-md-2"><button class="btn btn-success w-100" onclick="showAddForm()">Добавить</button></div>
-      <div class="col-md-2"><button class="btn btn-warning w-100" onclick="syncCalendar()">Синхронизировать</button></div>
-    </div>
-    <!-- Таблица расписания -->
-    <table class="table table-bordered table-striped">
-      <thead class="table-info">
-        <tr>
-          <th>День</th>
-          <th>Время</th>
-          <th>✈️ Предмет</th>
-          <th>Преподаватель</th>
-          <th>Аудитория</th>
-          <th></th>
-        </tr>
-      </thead>
-      <tbody id="scheduleBody"></tbody>
-    </table>
-    <!-- Форма добавления задания -->
-    <div id="formBlock" class="card p-3 d-none">
-      <h5>➕ Добавить занятие</h5>
-      <div class="row g-2">
-        <div class="col-md-3"><input id="formGroup" class="form-control" placeholder="Группа"></div>
-        <div class="col-md-2"><input id="formWeek" type="number" class="form-control" placeholder="Неделя"></div>
-        <div class="col-md-3"><input id="formDay" type="date" class="form-control"></div>
-        <div class="col-md-2"><input id="formStart" class="form-control" placeholder="Начало (HH:MM)"></div>
-        <div class="col-md-2"><input id="formEnd" class="form-control" placeholder="Конец (HH:MM)"></div>
-        <div class="col-md-4"><input id="formSubject" class="form-control" placeholder="Предмет"></div>
-        <div class="col-md-4"><input id="formTeacher" class="form-control" placeholder="Преподаватель"></div>
-        <div class="col-md-4"><input id="formRoom" class="form-control" placeholder="Аудитория"></div>
-        <div class="col-md-6"><input id="formType" class="form-control" placeholder="Тип (разовое)"></div>
-        <div class="col-md-6"><input id="formPattern" class="form-control" placeholder="Повторяемость"></div>
-        <div class="col-md-12">
-          <button class="btn btn-primary mt-2" onclick="submitForm()">Сохранить</button>
-          <button class="btn btn-secondary mt-2 ms-2" onclick="hideForm()">Отмена</button>
+  </div>
+
+  <!-- Модальное окно Вход -->
+  <div class="modal fade" id="loginModal" tabindex="-1">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">Вход</h5>
+          <button type="button" class="close" data-dismiss="modal">&times;</button>
+        </div>
+        <div class="modal-body">
+          <input id="email" type="email" class="form-control mb-2" placeholder="Email">
+          <input id="password" type="password" class="form-control mb-2" placeholder="Пароль">
+          <span id="loginStatus" class="text-success"></span>
+        </div>
+        <div class="modal-footer">
+          <button id="loginBtn" class="btn btn-primary">Войти</button>
+          <button class="btn btn-secondary" data-dismiss="modal">Отмена</button>
         </div>
       </div>
     </div>
   </div>
-  <!-- Скрипты -->
-  <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
-  <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
-  <script src="https://code.jquery.com/ui/1.13.2/jquery-ui.min.js"></script>
-  <script src="script.js"></script>
+
+  <!-- Модальное окно Регистрация -->
+  <div class="modal fade" id="registerModal" tabindex="-1">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title">Регистрация</h5>
+          <button type="button" class="close" data-dismiss="modal">&times;</button>
+        </div>
+        <div class="modal-body">
+          <input id="regEmail" type="email" class="form-control mb-2" placeholder="Email">
+          <input id="regPassword" type="password" class="form-control mb-2" placeholder="Пароль">
+        </div>
+        <div class="modal-footer">
+          <button id="registerBtn" class="btn btn-secondary">Зарегистрироваться</button>
+          <button class="btn btn-light" data-dismiss="modal">Отмена</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Модальное окно Добавить пару -->
+  <div class="modal fade" id="addModal" tabindex="-1">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 id="addModalLabel" class="modal-title">Добавить пару</h5>
+          <button type="button" class="close" data-dismiss="modal">&times;</button>
+        </div>
+        <div class="modal-body">
+          <input id="addGroup" type="text" class="form-control mb-2" placeholder="Группа">
+          <input id="addSubject" type="text" class="form-control mb-2" placeholder="Предмет">
+          <input id="addTeacher" type="text" class="form-control mb-2" placeholder="Преподаватель">
+          <input id="addDate" type="text" class="form-control mb-2" placeholder="Дата">
+          <input id="addStartTime" type="time" class="form-control mb-2">
+          <input id="addEndTime" type="time" class="form-control mb-2">
+        </div>
+        <div class="modal-footer">
+          <button id="addPairBtn" class="btn btn-success">Добавить</button>
+          <button class="btn btn-secondary" data-dismiss="modal">Отмена</button>
+        </div>
+      </div>
+    </div>
+  </div>
+  
+<!-- Модальное окно: Пользователи -->
+<div class="modal fade" id="usersModal" tabindex="-1">
+  <div class="modal-dialog modal-lg">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Управление пользователями</h5>
+        <button type="button" class="close" data-dismiss="modal">&times;</button>
+      </div>
+      <div class="modal-body">
+        <table class="table table-striped">
+          <thead>
+            <tr><th>ID</th><th>Email</th><th>Роль</th><th></th></tr>
+          </thead>
+          <tbody id="usersTableBody">
+            <!-- пользователи -->
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+
+<!-- jQuery UI -->
+<script src="https://code.jquery.com/ui/1.13.2/jquery-ui.min.js"></script>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jqueryui/1.13.2/i18n/jquery-ui-i18n.min.js"></script>
+
+<!-- Bootstrap -->
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.2/dist/js/bootstrap.bundle.min.js"></script>
+
+<!-- Axios -->
+<script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+
+<!-- Твой скрипт -->
+<script src="script.js"></script>
+
 </body>
 </html>

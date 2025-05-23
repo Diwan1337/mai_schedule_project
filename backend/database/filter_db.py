@@ -3,7 +3,6 @@ import json
 import re
 from backend.database.database import DB_PATH
 
-# <-- Ваш список «IT»-аудиторий, которые нужно учитывать
 ALLOWED_IT_ROOMS = {
     "ГУК Б-416", "ГУК Б-362", "ГУК Б-434", "ГУК Б-436", "ГУК Б-422",
     "ГУК Б-438", "ГУК Б-440", "ГУК Б-417", "ГУК Б-426", "ГУК Б-415",
@@ -14,12 +13,15 @@ ALLOWED_IT_ROOMS = {
 def setup_db(conn: sqlite3.Connection):
     """Создаёт (пересоздаёт) occupied_rooms и free_rooms."""
     cur = conn.cursor()
-    # сброс старых
+
+    # Сброс старых таблиц
     cur.execute("DROP TABLE IF EXISTS occupied_rooms;")
     cur.execute("DROP TABLE IF EXISTS free_rooms;")
-    # новая схема
+
+    # Новая схема для occupied_rooms
     cur.execute("""
         CREATE TABLE occupied_rooms (
+            schedule_id INTEGER,              -- 👈 добавлено поле
             week        INTEGER,
             day         TEXT,
             start_time  TEXT,
@@ -32,6 +34,8 @@ def setup_db(conn: sqlite3.Connection):
             PRIMARY KEY (week, day, start_time, end_time, room)
         );
     """)
+
+    # Схема для free_rooms
     cur.execute("""
         CREATE TABLE free_rooms (
             week       INTEGER,
@@ -42,7 +46,9 @@ def setup_db(conn: sqlite3.Connection):
             PRIMARY KEY (week, day, start_time, end_time, room)
         );
     """)
+
     conn.commit()
+
 
 
 def get_occupied_rooms(conn: sqlite3.Connection):
@@ -54,21 +60,23 @@ def get_occupied_rooms(conn: sqlite3.Connection):
     """
     cur = conn.cursor()
     cur.execute("""
-        SELECT s.week,
-               s.date,
-               s.time,
-               s.subject,
-               s.teachers,
-               s.rooms,
-               g.name AS group_name
-        FROM schedule s
-        JOIN groups  g ON s.group_id = g.id
+    SELECT s.id,
+           s.week,
+           s.date,
+           s.time,
+           s.subject,
+           s.teachers,
+           s.rooms,
+           g.name AS group_name
+    FROM schedule s
+    JOIN groups  g ON s.group_id = g.id
     """)
+
     rows = cur.fetchall()
     print(f"[FILTER_DB] Прочитано строк из schedule: {len(rows)}")
 
     occupied = []
-    for week, date_str, time_str, subject, teachers_json, rooms_json, group_name in rows:
+    for schedule_id, week, date_str, time_str, subject, teachers_json, rooms_json, group_name in rows:
         # преподаватели
         try:
             teachers = json.loads(teachers_json)
@@ -76,7 +84,6 @@ def get_occupied_rooms(conn: sqlite3.Connection):
             teachers = []
         teacher = ", ".join(teachers)
 
-        # нормализуем дефисы и разбиваем время
         clean_time = re.sub(r"[–—]", "-", time_str)
         parts = [p.strip() for p in clean_time.split("-")]
         if len(parts) != 2:
@@ -96,6 +103,7 @@ def get_occupied_rooms(conn: sqlite3.Connection):
         for room in rooms:
             if room in ALLOWED_IT_ROOMS:
                 occupied.append((
+                    schedule_id,
                     week,
                     date_str,
                     start_time,
@@ -106,6 +114,7 @@ def get_occupied_rooms(conn: sqlite3.Connection):
                     group_name,
                     weekday
                 ))
+
 
     print(f"[FILTER_DB] Сгенерировано occupied-записей: {len(occupied)}")
     return occupied
@@ -155,8 +164,8 @@ def save_filtered_data():
         # вставляем занятые
         cur.executemany(
             "INSERT INTO occupied_rooms "
-            "(week, day, start_time, end_time, room, subject, teacher, group_name, weekday) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?);",
+            "(schedule_id, week, day, start_time, end_time, room, subject, teacher, group_name, weekday) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);",
             occ_list
         )
 

@@ -4,6 +4,7 @@ from functools import wraps
 from datetime import datetime
 from flask import Flask, request, jsonify, g
 from flask_cors import CORS
+from backend.database.filter_db import save_filtered_data
 from backend.database.database import (
     DB_PATH,
     init_db,  # создаёт parser_pairs + groups
@@ -101,8 +102,32 @@ def login_user():
     )
     if not row or row["password"] != data["password"]:
         return jsonify({"msg": "Неверный логин или пароль"}), 401
+
     token = json.dumps({"user_id": row["id"], "role": row["role"]})
-    return jsonify(access_token=token), 200
+
+    # mister kostil
+    return jsonify(access_token=token, is_admin=(row["role"] == "admin")), 200
+
+
+@app.route("/users/<int:user_id>/promote", methods=["POST"])
+@jwt_required()
+def promote_user(user_id):
+    user = get_jwt_identity()
+    if user["role"] != "admin":
+        return jsonify({"msg": "Недостаточно прав"}), 403
+
+    execute_db("UPDATE users SET role = 'admin' WHERE id = ?", (user_id,))
+    return jsonify({"msg": f"Пользователь #{user_id} назначен админом"}), 200
+
+@app.route("/users", methods=["GET"])
+@jwt_required()
+def get_users():
+    user = get_jwt_identity()
+    if user["role"] != "admin":
+        return jsonify({"msg": "Недостаточно прав"}), 403
+
+    rows = query_db("SELECT id, email, role FROM users")
+    return jsonify([dict(r) for r in rows]), 200
 
 
 # ——— Группы ——— #
@@ -158,6 +183,25 @@ def get_schedule():
         })
     return jsonify(result), 200
 
+@app.route("/schedule/<int:item_id>", methods=["DELETE"])
+@jwt_required()
+def delete_schedule(item_id):
+    user = get_jwt_identity()
+    if user["role"] != "admin":
+        return jsonify({"msg": "Удаление доступно только админам"}), 403
+
+    # Удалим по ID
+    conn = get_db_connection()
+    cur = conn.cursor()
+    cur.execute("DELETE FROM schedule WHERE id = ?", (item_id,))
+    conn.commit()
+    conn.close()
+
+    # После удаления — пересчёт комнат
+    save_filtered_data()
+
+    return jsonify({"msg": f"Пара с ID={item_id} удалена"}), 200
+
 
 @app.route("/schedule", methods=["POST"])
 @jwt_required()
@@ -167,6 +211,7 @@ def add_schedule():
         return jsonify({"msg": "Недостаточно прав"}), 403
 
     data = request.get_json(force=True)
+
     # Находим ID группы
     grp = query_db("SELECT id FROM groups WHERE name = ?", (data["group_name"],), one=True)
     if not grp:
@@ -193,19 +238,19 @@ def add_schedule():
             rooms_json
         )
     )
+    save_filtered_data()
 
     return jsonify({"msg": "Занятие добавлено"}), 201
-
 
 # ——— Аудитории ——— #
 @app.route("/occupied_rooms", methods=["GET"])
 def occupied_rooms():
     rows = query_db(
-        "SELECT week, day, start_time, end_time, room, subject, teacher, group_name "
-        "FROM occupied_rooms"
+        "SELECT schedule_id AS id, week, day, start_time, end_time, room, subject, teacher, group_name FROM occupied_rooms"
     )
     return jsonify([
         {
+            "id": r["id"],
             "week": r["week"],
             "day": r["day"],
             "start_time": r["start_time"],
@@ -213,9 +258,10 @@ def occupied_rooms():
             "room": r["room"],
             "subject": r["subject"],
             "teacher": r["teacher"],
-            "group": r["group_name"],
+            "group_name": r["group_name"],
         } for r in rows
     ]), 200
+
 
 
 @app.route("/free_rooms", methods=["GET"])
@@ -261,6 +307,11 @@ def sync_range_calendar():
         return jsonify({"error": "Дата окончания раньше даты начала"}), 400
     sync_events_in_date_range(sd_dt, ed_dt)
     return jsonify({"msg": f"Синхронизированы события с {sd_dt} по {ed_dt}"}), 200
+
+@app.route("/allowed_rooms", methods=["GET"])
+def allowed_rooms():
+    from backend.database.filter_db import ALLOWED_IT_ROOMS
+    return jsonify(sorted(ALLOWED_IT_ROOMS)), 200
 
 
 if __name__ == "__main__":

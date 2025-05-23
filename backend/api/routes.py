@@ -205,6 +205,48 @@ def delete_schedule(item_id):
     return jsonify({"msg": f"Пара с ID={item_id} удалена"}), 200
 
 
+@app.route("/schedule/<int:item_id>", methods=["PUT"])
+@jwt_required()
+def update_schedule(item_id):
+    user = get_jwt_identity()
+    # разрешаем редактировать только учителям и админам
+    if user["role"] not in ("teacher", "admin"):
+        return jsonify({"msg": "Недостаточно прав"}), 403
+
+    data = request.get_json(force=True)
+    # Обновляем все поля (is_custom оставляем 1 — разовым)
+    sql = """
+        UPDATE schedule
+           SET group_name         = ?,
+               week               = ?,
+               day                = ?,
+               start_time         = ?,
+               end_time           = ?,
+               subject            = ?,
+               teacher            = ?,
+               room               = ?,
+               event_type         = ?,
+               recurrence_pattern = ?,
+               is_custom          = 1
+         WHERE id = ?
+    """
+    args = (
+        data.get("group_name", ""),
+        data["week"],
+        data["day"],
+        data["start_time"],
+        data["end_time"],
+        data["subject"],
+        data.get("teacher", ""),
+        data.get("room", ""),
+        data.get("event_type", "разовое"),
+        data.get("recurrence_pattern", ""),
+        item_id
+    )
+    execute_db(sql, args)
+    return jsonify({"msg": "Занятие обновлено"}), 200
+
+
 @app.route("/schedule", methods=["POST"])
 @jwt_required()
 def add_schedule():

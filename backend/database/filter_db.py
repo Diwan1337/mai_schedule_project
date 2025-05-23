@@ -21,7 +21,7 @@ def setup_db(conn: sqlite3.Connection):
     # Новая схема для occupied_rooms
     cur.execute("""
         CREATE TABLE occupied_rooms (
-            schedule_id INTEGER,       
+            schedule_id INTEGER,              -- 👈 добавлено поле
             week        INTEGER,
             day         TEXT,
             start_time  TEXT,
@@ -161,7 +161,7 @@ def save_filtered_data():
 
         # вставляем занятые
         cur.executemany(
-            "INSERT INTO occupied_rooms "
+            "INSERT OR IGNORE INTO occupied_rooms "
             "(schedule_id, week, day, start_time, end_time, room, subject, teacher, group_name, weekday) "
             "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);",
             occ_list

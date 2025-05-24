@@ -10,11 +10,11 @@ from googleapiclient.discovery import build
 from backend.database.database import DB_PATH  # единственный источник пути к БД
 
 # Параметры Google Calendar API
-BASE_DIR               = os.path.dirname(os.path.abspath(__file__))
-SERVICE_ACCOUNT_FILE   = os.path.join(BASE_DIR, "service_account.json")
-CALENDAR_ID            = "be410167da6282a13f52aad85d4ab444e8b456ecaf5da50495e0b782b566426f@group.calendar.google.com"
-SCOPES                 = ["https://www.googleapis.com/auth/calendar"]
-MOSCOW_TZ              = datetime.timezone(datetime.timedelta(hours=3))
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+SERVICE_ACCOUNT_FILE = os.path.join(BASE_DIR, "service_account.json")
+CALENDAR_ID = "be410167da6282a13f52aad85d4ab444e8b456ecaf5da50495e0b782b566426f@group.calendar.google.com"
+SCOPES = ["https://www.googleapis.com/auth/calendar"]
+MOSCOW_TZ = datetime.timezone(datetime.timedelta(hours=3))
 
 
 def get_calendar_service():
@@ -46,24 +46,32 @@ def parse_date_str(day_str: str) -> datetime.date | None:
     Если год не указан — берёт текущий, и если дата давно в прошлом (>60 дней),
     переключается на следующий год.
     """
+    m = re.match(r'(\d{1,2})\.(\d{1,2})\.(\d{4})$', day_str)
+    if m:
+        d, mo, y = map(int, m.groups())
+        try:
+            return datetime.date(y, mo, d)
+        except ValueError:
+            return None
+
     months = {
-        "января":   1, "февраля":  2, "марта":    3, "апреля":   4,
-        "мая":      5, "июня":     6, "июля":     7, "августа":  8,
-        "сентября": 9, "октября": 10, "ноября":  11, "декабря": 12
+        "января": 1, "февраля": 2, "марта": 3, "апреля": 4,
+        "мая": 5, "июня": 6, "июля": 7, "августа": 8,
+        "сентября": 9, "октября": 10, "ноября": 11, "декабря": 12
     }
     match = re.search(r'(\d{1,2})\s+([а-яА-Я]+)(?:\s+(\d{4}))?', day_str)
     if not match:
         return None
 
-    day_num   = int(match.group(1))
-    month_word= match.group(2).lower()
-    year      = int(match.group(3)) if match.group(3) else datetime.date.today().year
+    day_num = int(match.group(1))
+    month_word = match.group(2).lower()
+    year = int(match.group(3)) if match.group(3) else datetime.date.today().year
 
     if month_word not in months:
         return None
 
     candidate = datetime.date(year, months[month_word], day_num)
-    today     = datetime.date.today()
+    today = datetime.date.today()
     # если дата слишком давно в прошлом, переключаемся на следующий год
     if candidate < today and (today - candidate).days > 60:
         candidate = datetime.date(year + 1, months[month_word], day_num)
@@ -83,13 +91,15 @@ def sync_group_to_calendar(group_name: str):
     conn = sqlite3.connect(DB_PATH)
     cursor = conn.cursor()
     cursor.execute("""
-        SELECT rowid, week, day, start_time, end_time,
-               room, subject, teacher, group_name, google_event_id
-        FROM occupied_rooms
-        WHERE group_name = ?
+        SELECT o.rowid, o.week, o.day, o.start_time, o.end_time,
+            o.room, o.subject, o.teacher, o.group_name, o.google_event_id
+        FROM occupied_rooms o
+        JOIN schedule      s ON s.id = o.schedule_id
+        WHERE o.group_name = ?
+            AND s.is_custom  = 1
     """, (group_name,))
     rows = cursor.fetchall()
-    # не закрываем курсор, т.к. придётся обновлять google_event_id ниже
+    # Не закрываем курсор, т.к. придётся обновлять google_event_id ниже
     # conn.close() пока отложим
 
     # Группируем по одинаковым событиям
@@ -98,27 +108,35 @@ def sync_group_to_calendar(group_name: str):
         "day_str": None, "time_str": None
     })
     for (rowid, week, day_str, start_t, end_t,
-         room, subject, teacher, group_name_db, google_event_id) in rows:
-        time_str = f"{start_t} - {end_t}"
-        key = (week, day_str, time_str, room, subject, teacher)
-        events_dict[key]["rowids"].append(rowid)
-        events_dict[key]["groups"].add(group_name_db)
-        events_dict[key]["day_str"] = day_str
-        events_dict[key]["time_str"] = time_str
+         room, subject, teacher, group_name, google_event_id) in rows:
+        key = rowid
+        data = events_dict[key]
+        data["rowids"].append(rowid)
+        data["groups"].add(group_name)
+        data["week"] = week
+        data["day_str"] = day_str
+        data["time_str"] = f"{start_t} - {end_t}"
+        data["room"] = room
+        data["subject"] = subject
+        data["teacher"] = teacher
         if google_event_id:
-            events_dict[key]["google_event_id"] = google_event_id
+            data["google_event_id"] = google_event_id
 
     # Обрабатываем каждое уникальное событие
-    for key, data in events_dict.items():
-        week, day_str, time_str, room, subject, teacher = key
+    for rowid, data in events_dict.items():
+        week = data["week"]
+        day_str = data["day_str"]
+        time_str = data["time_str"]
+        room = data["room"]
+        subject = data["subject"]
+        teacher = data["teacher"]
         aggregated_groups = ", ".join(sorted(data["groups"]))
-        prev_event_id     = data["google_event_id"]
-        rowids            = data["rowids"]
+        prev_event_id = data["google_event_id"]
 
         # Приводим поля к строкам
         subject = str(subject) if subject else "No Subject"
         teacher = str(teacher) if teacher else ""
-        room    = str(room) if room else ""
+        room = str(room) if room else ""
 
         # Разбираем дату и время
         event_date = parse_date_str(day_str)
@@ -129,20 +147,20 @@ def sync_group_to_calendar(group_name: str):
         start_str, end_str = time_str.split(" - ")
         try:
             start_dt = datetime.datetime.combine(event_date,
-                         datetime.datetime.strptime(start_str, "%H:%M").time())
-            end_dt   = datetime.datetime.combine(event_date,
-                         datetime.datetime.strptime(end_str,   "%H:%M").time())
+                                                 datetime.datetime.strptime(start_str, "%H:%M").time())
+            end_dt = datetime.datetime.combine(event_date,
+                                               datetime.datetime.strptime(end_str, "%H:%M").time())
         except Exception as e:
             print(f"[GOOGLE_SYNC] Ошибка парсинга времени '{time_str}': {e}")
             continue
 
         # Формируем тело события
         event_body = {
-            'summary':     subject,
-            'location':    room,
+            'summary': subject,
+            'location': room,
             'description': f"Преподаватель: {teacher}\nГруппы: {aggregated_groups}\nНеделя: {week}",
-            'start':       {'dateTime': start_dt.isoformat(), 'timeZone': 'Europe/Moscow'},
-            'end':         {'dateTime': end_dt.isoformat(),   'timeZone': 'Europe/Moscow'},
+            'start': {'dateTime': start_dt.isoformat(), 'timeZone': 'Europe/Moscow'},
+            'end': {'dateTime': end_dt.isoformat(), 'timeZone': 'Europe/Moscow'},
         }
 
         # Создаём или обновляем событие
@@ -164,15 +182,16 @@ def sync_group_to_calendar(group_name: str):
                 print(f"[GOOGLE_SYNC] Создано событие {new_id}")
 
             # Сохраняем google_event_id обратно в БД
+            rowids = data["rowids"]
             for rid in rowids:
                 cursor.execute(
-                    "UPDATE occupied_rooms SET google_event_id = ? WHERE rowid = ?",
+                    "UPDATE occupied_rooms SET google_event_id = ? WHERE schedule_id = ?",
                     (new_id, rid)
                 )
             conn.commit()
 
         except Exception as e:
-            print(f"[GOOGLE_SYNC] Ошибка при синхронизации события {key}: {e}")
+            print(f"[GOOGLE_SYNC] Ошибка при синхронизации события {rowid}: {e}")
 
     conn.close()
     print("[GOOGLE_SYNC] Синхронизация группы завершена!")
@@ -219,7 +238,7 @@ def sync_events_in_date_range(start_date: datetime.date, end_date: datetime.date
     for (rowid, week, day_str, start_t, end_t,
          room, subject, teacher, group_name, google_event_id) in rows:
         time_str = f"{start_t} - {end_t}"
-        key = (week, day_str, time_str, room, subject, teacher)
+        key = rowid
         events_dict[key]["rowids"].append(rowid)
         events_dict[key]["groups"].add(group_name)
         events_dict[key]["day_str"] = day_str
@@ -228,15 +247,20 @@ def sync_events_in_date_range(start_date: datetime.date, end_date: datetime.date
             events_dict[key]["google_event_id"] = google_event_id
 
     # Обрабатываем каждое событие
-    for key, data in events_dict.items():
-        week, day_str, time_str, room, subject, teacher = key
+    for rowid, data in events_dict.items():
+        week = data["week"]
+        day_str = data["day_str"]
+        time_str = data["time_str"]
+        room = data["room"]
+        subject = data["subject"]
+        teacher = data["teacher"]
         aggregated_groups = ", ".join(sorted(data["groups"]))
-        prev_event_id     = data["google_event_id"]
-        rowids            = data["rowids"]
+        prev_event_id = data["google_event_id"]
+        rowids = data["rowids"]
 
         subject = str(subject) if subject else "No Subject"
         teacher = str(teacher) if teacher else ""
-        room    = str(room) if room else ""
+        room = str(room) if room else ""
 
         date_obj = parse_date_str(day_str)
         if not date_obj:
@@ -245,19 +269,19 @@ def sync_events_in_date_range(start_date: datetime.date, end_date: datetime.date
         start_str, end_str = time_str.split(" - ")
         try:
             start_dt = datetime.datetime.combine(date_obj,
-                         datetime.datetime.strptime(start_str, "%H:%M").time())
-            end_dt   = datetime.datetime.combine(date_obj,
-                         datetime.datetime.strptime(end_str,   "%H:%M").time())
+                                                 datetime.datetime.strptime(start_str, "%H:%M").time())
+            end_dt = datetime.datetime.combine(date_obj,
+                                               datetime.datetime.strptime(end_str, "%H:%M").time())
         except Exception as e:
             print(f"[GOOGLE_SYNC] Ошибка парсинга времени '{time_str}': {e}")
             continue
 
         event_body = {
-            'summary':     subject,
-            'location':    room,
+            'summary': subject,
+            'location': room,
             'description': f"Преподаватель: {teacher}\nГруппы: {aggregated_groups}\nНеделя: {week}",
-            'start':       {'dateTime': start_dt.isoformat(), 'timeZone': 'Europe/Moscow'},
-            'end':         {'dateTime': end_dt.isoformat(),   'timeZone': 'Europe/Moscow'},
+            'start': {'dateTime': start_dt.isoformat(), 'timeZone': 'Europe/Moscow'},
+            'end': {'dateTime': end_dt.isoformat(), 'timeZone': 'Europe/Moscow'},
         }
 
         try:
@@ -285,7 +309,7 @@ def sync_events_in_date_range(start_date: datetime.date, end_date: datetime.date
             conn.commit()
 
         except Exception as e:
-            print(f"[GOOGLE_SYNC] Ошибка при синхронизации события {key}: {e}")
+            print(f"[GOOGLE_SYNC] Ошибка при синхронизации события {rowid}: {e}")
 
     conn.close()
     print("[GOOGLE_SYNC] Синхронизация по диапазону завершена!")

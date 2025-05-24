@@ -12,7 +12,9 @@ from backend.database.database import (
 )
 from backend.api.google_sync import (
     sync_group_to_calendar,
-    sync_events_in_date_range
+    sync_events_in_date_range,
+    get_calendar_service,
+    CALENDAR_ID
 )
 
 app = Flask(__name__, static_folder='static', template_folder='templates')
@@ -24,6 +26,9 @@ CORS(app)
 conn = sqlite3.connect(DB_PATH, timeout=5)
 init_db(conn)
 create_app_tables(conn)
+from backend.api.google_sync import ensure_google_event_id_column
+
+ensure_google_event_id_column()
 conn.close()
 
 
@@ -192,29 +197,56 @@ def delete_schedule(item_id):
     if user["role"] != "admin":
         return jsonify({"msg": "Удаление доступно только админам"}), 403
 
-    # Удалим по ID
     conn = get_db_connection()
     cur = conn.cursor()
+
+    # Сначала проверим, это кастомная пара или исходная?
+    cur.execute("SELECT is_custom FROM schedule WHERE id = ?", (item_id,))
+    sch = cur.fetchone()
+    if not sch:
+        conn.close()
+        return jsonify({"msg": "Пара не найдена"}), 404
+
+    if sch["is_custom"]:
+        # только для кастомных пар пытаемся удалить событие из календаря
+        cur.execute(
+            "SELECT google_event_id FROM occupied_rooms WHERE schedule_id = ?",
+            (item_id,)
+        )
+        row = cur.fetchone()
+        if row and row["google_event_id"]:
+            try:
+                service = get_calendar_service()
+                service.events().delete(
+                    calendarId=CALENDAR_ID,
+                    eventId=row["google_event_id"]
+                ).execute()
+                print(f"[GOOGLE_SYNC] Удалено событие {row['google_event_id']}")
+            except Exception as e:
+                print(f"[GOOGLE_SYNC] Не удалось удалить событие {row['google_event_id']}: {e}")
+    else:
+        # для исходных пар просто логируем, что календарь не трогаем
+        print(f"[GOOGLE_SYNC] Пара {item_id} не кастомная — пропускаем delete в календаре")
+
+    # 2) удаляем саму пару из schedule
     cur.execute("DELETE FROM schedule WHERE id = ?", (item_id,))
     conn.commit()
     conn.close()
 
-    # После удаления — пересчёт комнат
+    # 3) пересчитываем occupied_rooms (и free_rooms)
     save_filtered_data()
-
-    return jsonify({"msg": f"Пара с ID={item_id} удалена"}), 200
+    return jsonify({"msg": "Пара удалена и календарь обновлён"}), 200
 
 
 @app.route("/schedule/<int:item_id>", methods=["PUT"])
 @jwt_required()
 def update_schedule(item_id):
     user = get_jwt_identity()
-    # разрешаем редактировать только учителям и админам
     if user["role"] not in ("teacher", "admin"):
         return jsonify({"msg": "Недостаточно прав"}), 403
 
     data = request.get_json(force=True)
-    # Обновляем все поля (is_custom оставляем 1 — разовым)
+    # 1) Обновляем запись в schedule
     sql = """
         UPDATE schedule
            SET group_name         = ?,
@@ -223,28 +255,35 @@ def update_schedule(item_id):
                start_time         = ?,
                end_time           = ?,
                subject            = ?,
-               teacher            = ?,
-               room               = ?,
+               teachers           = ?,
+               rooms              = ?,
                event_type         = ?,
                recurrence_pattern = ?,
                is_custom          = 1
          WHERE id = ?
     """
     args = (
-        data.get("group_name", ""),
+        data["group_name"],
         data["week"],
         data["day"],
         data["start_time"],
         data["end_time"],
         data["subject"],
-        data.get("teacher", ""),
-        data.get("room", ""),
+        json.dumps(data.get("teachers", [])),
+        json.dumps(data.get("rooms", [])),
         data.get("event_type", "разовое"),
         data.get("recurrence_pattern", ""),
         item_id
     )
     execute_db(sql, args)
-    return jsonify({"msg": "Занятие обновлено"}), 200
+
+    # 2) Пересчитываем occupied_rooms и free_rooms
+    save_filtered_data()
+
+    # 3) Синхронизируем обновлённую группу в Google Calendar
+    sync_group_to_calendar(data["group_name"])
+
+    return jsonify({"msg": "Занятие обновлено и синхронизировано с Google Calendar"}), 200
 
 
 @app.route("/schedule", methods=["POST"])
@@ -282,9 +321,11 @@ def add_schedule():
             rooms_json
         )
     )
+    # Обновляем occupied_rooms
     save_filtered_data()
-
-    return jsonify({"msg": "Занятие добавлено"}), 201
+    # Синхронизируем только что добавленную пару в Google Calendar
+    sync_group_to_calendar(data["group_name"])
+    return jsonify({"msg": "Занятие добавлено и отправлено в Google Calendar"}), 201
 
 
 # ——— Аудитории ——— #

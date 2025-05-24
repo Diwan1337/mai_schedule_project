@@ -14,24 +14,23 @@ def setup_db(conn: sqlite3.Connection):
     """Создаёт (пересоздаёт) occupied_rooms и free_rooms."""
     cur = conn.cursor()
 
-    # Сброс старых таблиц
-    cur.execute("DROP TABLE IF EXISTS occupied_rooms;")
     cur.execute("DROP TABLE IF EXISTS free_rooms;")
 
-    # Новая схема для occupied_rooms
+    # Таблица occupied_rooms создаётся один раз (при первом запуске) и больше не сбрасывается,
+    # чтобы в ней сохранялся google_event_id.
     cur.execute("""
-        CREATE TABLE occupied_rooms (
-            schedule_id INTEGER,              -- 👈 добавлено поле
-            week        INTEGER,
-            day         TEXT,
-            start_time  TEXT,
-            end_time    TEXT,
-            room        TEXT,
-            subject     TEXT,
-            teacher     TEXT,
-            group_name  TEXT,
-            weekday     TEXT,
-            PRIMARY KEY (week, day, start_time, end_time, room)
+        CREATE TABLE IF NOT EXISTS occupied_rooms (
+            schedule_id     INTEGER PRIMARY KEY,
+            week            INTEGER,
+            day             TEXT,
+            start_time      TEXT,
+            end_time        TEXT,
+            room            TEXT,
+            subject         TEXT,
+            teacher         TEXT,
+            group_name      TEXT,
+            weekday         TEXT,
+            google_event_id TEXT
         );
     """)
 
@@ -143,42 +142,60 @@ def get_free_rooms(occupied):
 
 def save_filtered_data():
     """
-    Сбрасывает и пересоздаёт таблицы, заполняет их occupied и free.
+    Пересоздаёт free_rooms и обновляет occupied_rooms, сохраняя google_event_id.
     """
     conn = sqlite3.connect(DB_PATH)
-    try:
-        setup_db(conn)
-        cur = conn.cursor()
+    cur = conn.cursor()
 
-        # получаем occupied + дедупликация
-        occupied = get_occupied_rooms(conn)
-        unique = {}
-        for rec in occupied:
-            key = rec[:5]
-            if key not in unique:
-                unique[key] = rec
-        occ_list = list(unique.values())
-
-        # вставляем занятые
-        cur.executemany(
-            "INSERT OR IGNORE INTO occupied_rooms "
-            "(schedule_id, week, day, start_time, end_time, room, subject, teacher, group_name, weekday) "
-            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);",
-            occ_list
+    # 1) удаляем из occupied те пары, которых уже нет в schedule (is_custom=1)
+    cur.execute("""
+        DELETE FROM occupied_rooms
+        WHERE schedule_id NOT IN (
+            SELECT id FROM schedule WHERE is_custom = 1
         )
+    """)
 
-        # генерируем и вставляем свободные
-        free = get_free_rooms(occ_list)
-        cur.executemany(
-            "INSERT INTO free_rooms "
-            "(week, day, start_time, end_time, room) VALUES (?, ?, ?, ?, ?);",
-            free
-        )
+    # 2) сбрасываем free_rooms
+    cur.execute("DROP TABLE IF EXISTS free_rooms;")
+    cur.execute("""
+        CREATE TABLE free_rooms (
+            week       INTEGER,
+            day        TEXT,
+            start_time TEXT,
+            end_time   TEXT,
+            room       TEXT,
+            PRIMARY KEY (week, day, start_time, end_time, room)
+        );
+    """)
 
-        conn.commit()
-        print("✅ occupied_rooms и free_rooms обновлены.")
-    finally:
-        conn.close()
+    # 3) собираем новые occupied (но не дропаем occupied_rooms — чтобы не слетали google_event_id)
+    occupied = get_occupied_rooms(conn)
+    unique = {}
+    for rec in occupied:
+        key = rec[:5]
+        if key not in unique:
+            unique[key] = rec
+    occ_list = list(unique.values())
+
+    # 4) вставляем новые занятые (INSERT OR IGNORE не трогает уже существующие строки с google_event_id)
+    cur.executemany(
+        "INSERT OR IGNORE INTO occupied_rooms "
+        "(schedule_id, week, day, start_time, end_time, room, subject, teacher, group_name, weekday) "
+        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);",
+        occ_list
+    )
+
+    # 5) генерируем и вставляем новые свободные
+    free = get_free_rooms(occ_list)
+    cur.executemany(
+        "INSERT OR IGNORE INTO free_rooms "
+        "(week, day, start_time, end_time, room) VALUES (?, ?, ?, ?, ?);",
+        free
+    )
+
+    conn.commit()
+    conn.close()
+    print("✅ occupied_rooms и free_rooms обновлены.")
 
 
 if __name__ == "__main__":

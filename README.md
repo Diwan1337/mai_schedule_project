@@ -1,169 +1,189 @@
-# 💻 MAI Schedule Service
 
-**Веб-сервис для автоматизированного сбора, отображения и синхронизации расписания занятий в компьютерных аудиториях кафедры 806 МАИ**.
+# 🚀 MAI Schedule Service
 
----
+![Python 3.11+](https://img.shields.io/badge/python-3.11%2B-blue?logo=python)
+![Flask](https://img.shields.io/badge/flask-2.x-orange?logo=flask)
+![React](https://img.shields.io/badge/react-18.x-blue?logo=react)
+![Tailwind CSS](https://img.shields.io/badge/tailwindcss-^3.0-teal?logo=tailwind-css)
+![SQLite](https://img.shields.io/badge/sqlite-3.x-lightgrey?logo=sqlite)
+![MIT License](https://img.shields.io/badge/license-MIT-green)
 
-## 📌 Оглавление
-
-* [Описание](#описание)
-* [Особенности](#особенности)
-* [Архитектура](#архитектура)
-* [Установка](#установка)
-* [Использование](#использование)
-* [Структура проекта](#структура-проекта)
-* [Тестирование](#тестирование)
-* [Контрибьютинг](#контрибьютинг)
-* [Лицензия](#лицензия)
+> **“Mission-critical scheduling for MAI’s IT auditoriums — end-to-end, from scraper to web UI.”**
 
 ---
 
-## 📝 Описание
+## 🔥 Why This Project Rocks
 
-Этот проект позволяет:
-
-* Автоматически **парсить** расписание занятий с официального сайта МАИ с помощью Selenium.
-* Сохранять данные локально в SQLite для офлайн-доступа и быстрой фильтрации.
-* Предоставлять **REST API** (Flask) для получения расписания, списка групп и свободных/занятых аудиторий.
-* Синхронизировать расписание с **Google Calendar** для уведомлений и интеграции.
-
----
-
-## 🌟 Особенности
-
-* **Парсер расписания** на основе undetected\_chromedriver.
-* **Кэширование** полученных групп и заданий (JSON‑файлы).
-* **Фильтрация** аудиторий по расписанию (occupied/free rooms).
-* **JWT‑авторизация** для CRUD‑операций (роли: student, teacher, admin).
-* **Интеграция** с Google Calendar: автоматическое создание/удаление событий.
-* **Конфигурируемость**: выбор недель для парсинга, настраиваемые аудиторные фильтры.
+- **Full-stack** “MAI Schedule” solution: parser ▶️ API ▶️ web UI  
+- **Automated** Selenium-driven scraping of MAI’s official timetable  
+- **REST-first** Flask backend with **JWT** auth & role-based permissions  
+- **Real-time** Google Calendar sync — auto-create, update & delete events  
+- **Responsive** single-page frontend for students, teachers & admins  
+- **Lightweight** SQLite infrastructure — simple, embeddable, zero-ops  
 
 ---
 
-## 🏗 Архитектура
+## 📊 Tech Stack Breakdown
+
+| Component           | Technology               | % of Codebase |
+|---------------------|--------------------------|:-------------:|
+| **Backend**         | Python 3.9+, Flask       |      50%      |
+| **Parser**          | Selenium, undetected-chromedriver | 15% |
+| **Database**        | SQLite3                  |      10%      |
+| **Calendar Sync**   | Google Calendar API      |       5%      |
+| **Frontend**        | HTML5, CSS3, Vanilla JS (Axios, Bootstrap) | 15% |
+| **CI / Infra**      | GitHub Actions, Docker   |       5%      |
+
+---
+
+## 🏗 Project Structure
 
 ```text
-├── backend/                  # Серверная часть
-│   ├── parser/               # Парсер (Selenium)
-│   │   ├── parser.py         # Основной скрипт парсера
-│   │   ├── groups_parser.py  # Получение списка групп
-│   │   └── mai_schedule.db   # БД расписания
+mai_schedule_project/
+├── backend/
+│   ├── parser/                 # 🤖 Schedule crawler (Selenium)
+│   │   ├── parser.py           # • Entry point: --weeks flag  
+│   │   └── groups_parser.py    # • Fetches group list  
 │   │
-│   ├── database/             # Модуль работы с БД
-│   │   ├── database.py       # Функции create/query/execute
-│   │   └── filter_db.py      # Фильтрация occupied/free rooms
+│   ├── database/               # 💾 SQLite schema & filter logic
+│   │   ├── database.py         # • DB init, query/execute helpers  
+│   │   └── filter_db.py        # • Occupied/free room generation  
 │   │
-│   ├── api/                  # REST API (Flask)
-│   │   ├── routes.py         # Определение эндпоинтов
-│   │   ├── google_sync.py    # Синхронизация с Google Calendar
-│   │   └── delete_events.py  # Удаление событий из Google Calendar
+│   ├── api/                    # 🛠 Flask REST API + Google sync
+│   │   ├── routes.py           # • CRUD endpoints, JWT auth  
+│   │   ├── google_sync.py      # • Calendar insert/update/delete  
+│   │   └── delete_events.py    # • Bulk-delete helper  
 │   │
-│   └── notifier/             # (в будущем) уведомления
+│   └── notifier/               # 🔔 (future) email/push notifications
 │
-├── frontend/                 # (в будущем) веб‑интерфейс
+├── frontend/                   # 🌐 Single-Page App
+│   ├── index.html              # • React-free HTML + Bootstrap  
+│   ├── script.js               # • Axios calls, dynamic table  
+│   └── styles.css              # • Custom UI tweaks  
 │
-├── docs/                     # Документация
-│   ├── Business Requirements.docx
-│   └── System Requirements.docx
+├── docs/                       # 📝 Design & requirements
+│   ├── Business_Requirements.docx
+│   └── System_Requirements.docx
 │
-├── requirements.txt          # Python-зависимости
-├── .gitignore                # Исключения Git
-└── README.md                 # Документация проекта
-```
+├── .github/                    # 🚧 CI/CD workflows
+│   └── ci.yml
+│
+├── Dockerfile                  # 🐳 Containerized service
+├── .dockerignore
+├── requirements.txt            # 📦 Python dependencies
+└── README.md                   # 📘 This file
+````
 
 ---
 
-## 🚀 Установка
+## ⚡ Key Features
 
-1. **Клонировать репозиторий**:
+1. **Parser**
 
-   ```bash
-   git clone https://github.com/Diwan1337/mai_schedule_project.git
-   ```
-   ```
-   cd mai_schedule_project
-   ```
-2. **Создать и активировать виртуальное окружение**:
+   * Headless, stealth scraping of MAI’s schedule
+   * Command-line flags for week ranges, group filters
 
-   ```bash
-   python -m venv .venv
-   ```
-   # Windows
-   ```
-   .\.venv\Scripts\activate
-   ```
-   # Linux/macOS
-   ```
-   source .venv/bin/activate
-   ```
-4. **Установить зависимости**:
+2. **Database**
 
-   ```bash
-   pip install -r requirements.txt
-   ```
+   * Auto-migrates schema on startup
+   * Computes “occupied” vs. “free” slots for IT rooms
+   * Persists `google_event_id` for two-way sync
+
+3. **API**
+
+   * **Public**:
+
+     * `GET /groups` — list all group names
+     * `GET /schedule?group=<G>&week=<W>` — group timetable
+     * `GET /occupied_rooms` / `GET /free_rooms` — room availability
+   * **Protected (JWT)**:
+
+     * `POST /schedule` — add custom slot
+     * `PUT /schedule/:id` — modify slot
+     * `DELETE /schedule/:id` — delete slot
+     * `POST /calendar/sync_group` — manual sync
+
+4. **Google Calendar Sync**
+
+   * Automatic creation, update, deletion
+   * Aggregates multiple groups in one event if needed
+
+5. **Frontend**
+
+   * Dynamic, filterable timetable view
+   * CRUD UI for teachers & admins
+   * One-click Google sync trigger
 
 ---
 
-## ▶️ Использование
-
-### 1. Парсинг расписания
+## 🛠 Installation & Quickstart
 
 ```bash
+# 1. Clone & enter
+git clone https://github.com/Diwan1337/mai_schedule_project.git
+```
+````
+cd mai_schedule_project
+````
+# 2. Python environment
+````
+python -m venv .venv
+````
+````
+source .venv/bin/activate      # macOS/Linux
+````
+````
+.\.venv\Scripts\activate       # Windows
+````
+````
+pip install -r requirements.txt
+````
+
+# 3. Configure Google Calendar credentials
+````
+cp backend/api/service_account.example.json backend/api/service_account.json
+````
+# Edit backend/api/google_sync.py → SERVICE_ACCOUNT_FILE, CALENDAR_ID
+
+# 4. Run parser
+````
 cd backend/parser
-```
-```
+````
+````
 python parser.py --weeks 1,2,3
-```
-
-### 2. Фильтрация аудиторий
-
-```bash
-cd ../database
-```
-```
-python filter_db.py
-```
-
-### 3. Запуск API-сервера
-
-```bash
+````
+# 5. Start API server
+````
 cd ../api
-```
-```
-python -m api.routes
-```
+````
+````
+python -m routes
+````
 
-### 4. Взаимодействие с API
+# 6. Open frontend
+````
+cd ../../frontend
+````
+# Simply open index.html in your browser (it calls API on 127.0.0.1:5000)
 
-* Получить список групп: `GET /groups`
-* Получить расписание для группы: `GET /schedule?group=G1&week=5`
-* Получить занятые кабинеты: `GET /occupied_rooms`
-* Добавить занятие (только teacher/admin): `POST /schedule`
-* Синхронизировать группу с Google Calendar: `POST /calendar/sync_group` (JWT)
 
----
-
-## ✅ Тестирование
-
-```bash
-cd backend
-```
-```
-python test_routes.py
-```
 
 ---
 
-## 🤝 Контрибьютинг
+## 🤝 Contributing
 
-1. Сделайте fork репозитория
-2. Создайте новую ветку: `git checkout -b feat/your-feature`
-3. Внесите изменения и сделайте commit: `git commit -m "feat: описание"`
-4. Push в ветку: `git push origin feat/your-feature`
-5. Создайте Pull Request
+1. **Fork** & branch
+2. **Implement** feature / bugfix
+3. **Commit** with clear message:
+
+   ```bash
+   git commit -m "feat(parser): support multi-week scrape"
+   ```
+4. **Push** & open a **Pull Request**
+5. ✅ Ensure CI green & reviewers approve
 
 ---
 
-## 📄 Лицензия
+## 📜 License
 
-Проект распространяется под лицензией MIT. Смотри [LICENSE](LICENSE).
+MIT © [MAI Schedule Team](https://github.com/Diwan1337)

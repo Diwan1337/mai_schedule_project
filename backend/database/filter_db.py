@@ -179,9 +179,21 @@ def save_filtered_data():
 
     # 4) вставляем новые занятые (INSERT OR IGNORE не трогает уже существующие строки с google_event_id)
     cur.executemany(
-        "INSERT OR IGNORE INTO occupied_rooms "
-        "(schedule_id, week, day, start_time, end_time, room, subject, teacher, group_name, weekday) "
-        "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?);",
+        """
+        INSERT INTO occupied_rooms
+            (schedule_id, week, day, start_time, end_time, room, subject, teacher, group_name, weekday)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(schedule_id) DO UPDATE SET
+            week       = excluded.week,
+            day        = excluded.day,
+            start_time = excluded.start_time,
+            end_time   = excluded.end_time,
+            room       = excluded.room,
+            subject    = excluded.subject,
+            teacher    = excluded.teacher,
+            group_name = excluded.group_name,
+            weekday    = excluded.weekday
+        """,
         occ_list
     )
 

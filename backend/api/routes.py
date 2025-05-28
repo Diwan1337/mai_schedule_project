@@ -4,35 +4,47 @@ from functools import wraps
 from datetime import datetime
 from flask import Flask, request, jsonify, g
 from flask_cors import CORS
+from flask_jwt_extended import jwt_required
+
 from backend.database.filter_db import save_filtered_data
 from backend.database.database import (
     DB_PATH,
-    init_db,  # создаёт parser_pairs + groups
-    create_app_tables  # создаёт users, schedule, occupied_rooms, free_rooms, changes_log
+    init_db,
+    create_app_tables
 )
 from backend.api.google_sync import (
     sync_group_to_calendar,
     sync_events_in_date_range,
     get_calendar_service,
-    CALENDAR_ID
+    CALENDAR_ID,
+    parse_date_str,
+    ensure_google_event_id_column
 )
 
 app = Flask(__name__, static_folder='static', template_folder='templates')
 CORS(app)
 
-# ——— Инициализация БД ———
-# 1) парсер-таблицы (init_db)
-# 2) таблицы приложения (create_app_tables)
+ACADEMIC_WEEK_OFFSET = 6
+
+
+def extract_week_from_date_str(date_str: str) -> int:
+    """
+    Parse a string like "Пн, 26 мая" into a date and return academic week number.
+    """
+    dt = parse_date_str(date_str)
+    iso_week = dt.isocalendar()[1]
+    return iso_week - ACADEMIC_WEEK_OFFSET
+
+
+# ——— Initialize database and tables ———
 conn = sqlite3.connect(DB_PATH, timeout=5)
 init_db(conn)
 create_app_tables(conn)
-from backend.api.google_sync import ensure_google_event_id_column
-
 ensure_google_event_id_column()
 conn.close()
 
 
-# ——— Утилиты для работы с БД ———
+# ——— Database utilities ———
 def get_db_connection():
     conn = sqlite3.connect(DB_PATH, timeout=5)
     conn.row_factory = sqlite3.Row
@@ -59,7 +71,7 @@ def execute_db(query: str, args=()):
     return last_id
 
 
-# ——— Простейшая «JWT» авторизация с JSON-токеном ——— #
+# ——— Simple JWT authentication with JSON token ———
 def jwt_required():
     def decorator(fn):
         @wraps(fn)
@@ -74,9 +86,7 @@ def jwt_required():
                 return jsonify({"msg": "Invalid token"}), 401
             g.current_user = identity
             return fn(*args, **kwargs)
-
         return wrapper
-
     return decorator
 
 
@@ -84,7 +94,7 @@ def get_jwt_identity():
     return getattr(g, "current_user", None)
 
 
-# ——— Регистрация и логин ——— #
+# ——— User registration and login ———
 @app.route("/register", methods=["POST"])
 def register_user():
     data = request.get_json(force=True)
@@ -107,22 +117,32 @@ def login_user():
     )
     if not row or row["password"] != data["password"]:
         return jsonify({"msg": "Неверный логин или пароль"}), 401
-
     token = json.dumps({"user_id": row["id"], "role": row["role"]})
-
-    # mister kostil
     return jsonify(access_token=token, is_admin=(row["role"] == "admin")), 200
 
 
+# ——— User management endpoints ———
 @app.route("/users/<int:user_id>/promote", methods=["POST"])
 @jwt_required()
 def promote_user(user_id):
     user = get_jwt_identity()
     if user["role"] != "admin":
         return jsonify({"msg": "Недостаточно прав"}), 403
-
     execute_db("UPDATE users SET role = 'admin' WHERE id = ?", (user_id,))
     return jsonify({"msg": f"Пользователь #{user_id} назначен админом"}), 200
+
+
+@app.route("/users/<int:user_id>/demote", methods=["POST"])
+@jwt_required()
+def demote_user(user_id):
+    user = get_jwt_identity()
+    if user["role"] != "admin":
+        return jsonify({"msg": "Недостаточно прав"}), 403
+    target = query_db("SELECT role FROM users WHERE id = ?", (user_id,), one=True)
+    if not target or target["role"] != "admin":
+        return jsonify({"msg": "Пользователь не админ"}), 400
+    execute_db("UPDATE users SET role = 'user' WHERE id = ?", (user_id,))
+    return jsonify({"msg": f"Пользователь #{user_id} лишен прав администратора"}), 200
 
 
 @app.route("/users", methods=["GET"])
@@ -131,45 +151,36 @@ def get_users():
     user = get_jwt_identity()
     if user["role"] != "admin":
         return jsonify({"msg": "Недостаточно прав"}), 403
-
     rows = query_db("SELECT id, email, role FROM users")
     return jsonify([dict(r) for r in rows]), 200
 
 
-# ——— Группы ——— #
+# ——— Groups endpoint ———
 @app.route("/groups", methods=["GET"])
 def get_groups():
     rows = query_db("SELECT name FROM groups")
     return jsonify([r["name"] for r in rows]), 200
 
 
-# ——— Расписание ——— #
+# ——— Schedule endpoints ———
 @app.route("/schedule", methods=["GET"])
 def get_schedule():
     group = request.args.get("group")
     week = request.args.get("week")
     if not group or not week:
         return jsonify({"error": "Параметры group и week обязательны"}), 400
-
     rows = query_db(
         """
-        SELECT s.id,
-            s.date    AS date,
-            s.time    AS time,
-            s.subject,
-            s.teachers,
-            s.rooms,
-            s.is_custom
+        SELECT s.id, s.date AS date, s.time AS time,
+               s.subject, s.teachers, s.rooms, s.is_custom
         FROM schedule s
-        JOIN groups  g ON s.group_id = g.id
+        JOIN groups g ON s.group_id = g.id
         WHERE g.name = ? AND s.week = ?
         """,
         (group, week)
     )
     result = []
-
     for r in rows:
-        # teachers и rooms хранятся как JSON-строки
         try:
             teachers = json.loads(r["teachers"])
         except:
@@ -196,19 +207,14 @@ def delete_schedule(item_id):
     user = get_jwt_identity()
     if user["role"] != "admin":
         return jsonify({"msg": "Удаление доступно только админам"}), 403
-
     conn = get_db_connection()
     cur = conn.cursor()
-
-    # Сначала проверим, это кастомная пара или исходная?
     cur.execute("SELECT is_custom FROM schedule WHERE id = ?", (item_id,))
     sch = cur.fetchone()
     if not sch:
         conn.close()
         return jsonify({"msg": "Пара не найдена"}), 404
-
     if sch["is_custom"]:
-        # только для кастомных пар пытаемся удалить событие из календаря
         cur.execute(
             "SELECT google_event_id FROM occupied_rooms WHERE schedule_id = ?",
             (item_id,)
@@ -221,19 +227,11 @@ def delete_schedule(item_id):
                     calendarId=CALENDAR_ID,
                     eventId=row["google_event_id"]
                 ).execute()
-                print(f"[GOOGLE_SYNC] Удалено событие {row['google_event_id']}")
             except Exception as e:
                 print(f"[GOOGLE_SYNC] Не удалось удалить событие {row['google_event_id']}: {e}")
-    else:
-        # для исходных пар просто логируем, что календарь не трогаем
-        print(f"[GOOGLE_SYNC] Пара {item_id} не кастомная — пропускаем delete в календаре")
-
-    # 2) удаляем саму пару из schedule
     cur.execute("DELETE FROM schedule WHERE id = ?", (item_id,))
     conn.commit()
     conn.close()
-
-    # 3) пересчитываем occupied_rooms (и free_rooms)
     save_filtered_data()
     return jsonify({"msg": "Пара удалена и календарь обновлён"}), 200
 
@@ -244,46 +242,27 @@ def update_schedule(item_id):
     user = get_jwt_identity()
     if user["role"] not in ("teacher", "admin"):
         return jsonify({"msg": "Недостаточно прав"}), 403
-
     data = request.get_json(force=True)
-    # 1) Обновляем запись в schedule
-    sql = """
+    week = extract_week_from_date_str(data["date"])
+    execute_db(
+        """
         UPDATE schedule
-           SET group_name         = ?,
-               week               = ?,
-               day                = ?,
-               start_time         = ?,
-               end_time           = ?,
-               subject            = ?,
-               teachers           = ?,
-               rooms              = ?,
-               event_type         = ?,
-               recurrence_pattern = ?,
-               is_custom          = 1
-         WHERE id = ?
-    """
-    args = (
-        data["group_name"],
-        data["week"],
-        data["day"],
-        data["start_time"],
-        data["end_time"],
-        data["subject"],
-        json.dumps(data.get("teachers", [])),
-        json.dumps(data.get("rooms", [])),
-        data.get("event_type", "разовое"),
-        data.get("recurrence_pattern", ""),
-        item_id
+           SET week=?, date=?, time=?, subject=?, teachers=?, rooms=?, is_custom=1
+         WHERE id=?
+        """,
+        (
+            week,
+            data["date"],
+            data["time"],
+            data["subject"],
+            json.dumps(data["teachers"]),
+            json.dumps(data["rooms"]),
+            item_id
+        )
     )
-    execute_db(sql, args)
-
-    # 2) Пересчитываем occupied_rooms и free_rooms
     save_filtered_data()
-
-    # 3) Синхронизируем обновлённую группу в Google Calendar
     sync_group_to_calendar(data["group_name"])
-
-    return jsonify({"msg": "Занятие обновлено и синхронизировано с Google Calendar"}), 200
+    return jsonify({"msg": "Обновлено"}), 200
 
 
 @app.route("/schedule", methods=["POST"])
@@ -292,43 +271,35 @@ def add_schedule():
     user = get_jwt_identity()
     if user["role"] not in ("teacher", "admin"):
         return jsonify({"msg": "Недостаточно прав"}), 403
-
     data = request.get_json(force=True)
-
-    # Находим ID группы
-    grp = query_db("SELECT id FROM groups WHERE name = ?", (data["group_name"],), one=True)
+    grp = query_db(
+        "SELECT id FROM groups WHERE name = ?",
+        (data["group_name"],), one=True
+    )
     if not grp:
         return jsonify({"error": "Группа не найдена"}), 404
-    group_id = grp["id"]
-
-    # Собираем JSON-поля
-    teachers_json = json.dumps(data.get("teachers", []))
-    rooms_json = json.dumps(data.get("rooms", []))
-
+    week = extract_week_from_date_str(data["date"])
     execute_db(
         """
         INSERT INTO schedule
             (group_id, week, date, time, subject, teachers, rooms, is_custom)
         VALUES (?, ?, ?, ?, ?, ?, ?, 1)
-        """,
-        (
-            group_id,
-            data["week"],
+        """, (
+            grp["id"],
+            week,
             data["date"],
             data["time"],
             data["subject"],
-            teachers_json,
-            rooms_json
+            json.dumps(data["teachers"]),
+            json.dumps(data["rooms"])
         )
     )
-    # Обновляем occupied_rooms
     save_filtered_data()
-    # Синхронизируем только что добавленную пару в Google Calendar
     sync_group_to_calendar(data["group_name"])
-    return jsonify({"msg": "Занятие добавлено и отправлено в Google Calendar"}), 201
+    return jsonify({"msg": "Занятие добавлено"}), 201
 
 
-# ——— Аудитории ——— #
+# ——— Room availability endpoints ———
 @app.route("/occupied_rooms", methods=["GET"])
 def occupied_rooms():
     rows = query_db(
@@ -344,7 +315,7 @@ def occupied_rooms():
             "room": r["room"],
             "subject": r["subject"],
             "teacher": r["teacher"],
-            "group_name": r["group_name"],
+            "group_name": r["group_name"]
         } for r in rows
     ]), 200
 
@@ -360,40 +331,42 @@ def free_rooms():
             "day": r["day"],
             "start_time": r["start_time"],
             "end_time": r["end_time"],
-            "room": r["room"],
+            "room": r["room"]
         } for r in rows
     ]), 200
 
 
-# ——— Синхронизация с Google ——— #
+# ——— Google Calendar synchronization endpoints ———
 @app.route("/calendar/sync_group", methods=["POST"])
 @jwt_required()
 def sync_group_calendar():
     data = request.get_json(force=True)
-    if not data.get("group"):
+    group = data.get("group")
+    if not group:
         return jsonify({"error": "Укажите группу"}), 400
-    sync_group_to_calendar(data["group"])
-    return jsonify({"msg": f"Расписание группы {data['group']} добавлено в Google Calendar"}), 200
+    sync_group_to_calendar(group)
+    return jsonify({"msg": f"Расписание группы {group} добавлено в Google Calendar"}), 200
 
 
 @app.route("/calendar/sync_range", methods=["POST"])
 def sync_range_calendar():
     data = request.get_json(force=True)
-    sd = data.get("start_date")
-    ed = data.get("end_date")
-    if not sd or not ed:
+    start = data.get("start_date")
+    end = data.get("end_date")
+    if not start or not end:
         return jsonify({"error": "Введите start_date и end_date"}), 400
     try:
-        sd_dt = datetime.strptime(sd, "%d.%m.%Y").date()
-        ed_dt = datetime.strptime(ed, "%d.%m.%Y").date()
+        sd = datetime.strptime(start, "%d.%m.%Y").date()
+        ed = datetime.strptime(end, "%d.%m.%Y").date()
     except ValueError as e:
         return jsonify({"error": f"Неверный формат даты: {e}"}), 400
-    if ed_dt < sd_dt:
+    if ed < sd:
         return jsonify({"error": "Дата окончания раньше даты начала"}), 400
-    sync_events_in_date_range(sd_dt, ed_dt)
-    return jsonify({"msg": f"Синхронизированы события с {sd_dt} по {ed_dt}"}), 200
+    sync_events_in_date_range(sd, ed)
+    return jsonify({"msg": f"Синхронизированы события с {sd} по {ed}"}), 200
 
 
+# ——— Allowed rooms endpoint ———
 @app.route("/allowed_rooms", methods=["GET"])
 def allowed_rooms():
     from backend.database.filter_db import ALLOWED_IT_ROOMS
@@ -401,5 +374,5 @@ def allowed_rooms():
 
 
 if __name__ == "__main__":
-    # Чтобы SQLite не блокироваться
+    # Disable reloader to avoid double init
     app.run(debug=False, use_reloader=False, port=5000)

@@ -3,178 +3,167 @@
 <head>
   <meta charset="UTF-8">
   <title>✈️ Расписание IT-кабинетов МАИ</title>
-  <link rel="stylesheet" href="style.css">
-  <!-- Bootstrap 4.6 CSS -->
-  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@4.6.2/dist/css/bootstrap.min.css">
-  <!-- jQuery UI (for datepicker & autocomplete) CSS -->
+  <!-- Bootstrap 5 -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <!-- Bootstrap Icons -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.10.5/font/bootstrap-icons.css" rel="stylesheet">
+  <!-- jQuery UI (datepicker, autocomplete) -->
   <link rel="stylesheet" href="https://code.jquery.com/ui/1.13.2/themes/base/jquery-ui.css">
+  <!-- Ваши стили -->
+  <link rel="stylesheet" href="style.css">
 </head>
 <body>
-  <!-- Навигация -->
+
+  <!-- NAVBAR -->
   <nav class="navbar navbar-expand-lg navbar-light bg-light">
-    <a class="navbar-brand" href="#">✈️ Расписание IT-кабинетов МАИ</a>
-    <div class="collapse navbar-collapse">
-      <ul class="navbar-nav ml-auto">
-        <li class="nav-item">
-          <a id="loginLink" class="nav-link" href="#" data-toggle="modal" data-target="#loginModal">Вход</a>
-        </li>
-        <li class="nav-item">
-          <a id="registerLink" class="nav-link" href="#" data-toggle="modal" data-target="#registerModal">Регистрация</a>
-        </li>
-        <li class="nav-item">
-          <a id="logoutLink" class="nav-link d-none" href="#">Выход</a>
-        </li>
-        <li class="nav-item d-none" id="manageUsersNav">
-          <a class="nav-link" href="#" data-toggle="modal" data-target="#usersModal">Пользователи</a>
-        </li>
-      </ul>
+    <div class="container-fluid">
+      <a class="navbar-brand" href="#">✈️ Расписание IT-кабинетов МАИ</a>
+      <button class="navbar-toggler" type="button" data-bs-toggle="collapse"
+              data-bs-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false"
+              aria-label="Toggle navigation">
+        <span class="navbar-toggler-icon"></span>
+      </button>
+      <div class="collapse navbar-collapse" id="navbarNav">
+        <ul class="navbar-nav ms-auto">
+          <li class="nav-item">
+            <a id="loginLink" class="nav-link" href="#" data-bs-toggle="modal" data-bs-target="#loginModal">Вход</a>
+          </li>
+          <li class="nav-item">
+            <a id="registerLink" class="nav-link" href="#" data-bs-toggle="modal" data-bs-target="#registerModal">Регистрация</a>
+          </li>
+          <li class="nav-item">
+            <a id="logoutLink" class="nav-link d-none" href="#">Выход</a>
+          </li>
+          <li class="nav-item d-none" id="manageUsersNav">
+            <a class="nav-link" href="#" data-bs-toggle="modal" data-bs-target="#usersModal">Пользователи</a>
+          </li>
+        </ul>
+      </div>
     </div>
   </nav>
 
-  <div class="container">
-    <!-- Стартовый экран выбора кабинета и недели -->
-    <div id="roomsTab">
-      <div class="row mb-3 align-items-center">
-        <div class="col-md-3">
-          <select id="roomSelect" class="form-control">
-            <option value="">Кабинет</option>
-          </select>
-        </div>
-        <div class="col-md-3">
-          <select id="roomWeekInput" class="form-control">
-            <option value="">Неделя</option>
-          </select>
-        </div>
-        <div class="col-md-3">
-          <button id="loadRoomsBtn" class="btn btn-primary w-100" onclick="loadRooms()" disabled>Показать</button>
-        </div>
-      </div>
-      <!-- Статус свободности сейчас -->
-      <div id="freeStatus"></div>
-      <button id="addBtn" class="btn btn-success mb-3 d-none" data-toggle="modal" data-target="#addModal">➕ Добавить пару</button>
-      <!-- Таблица расписания кабинета -->
-      <div class="table-responsive">
-        <table id="roomsTable" class="table table-striped d-none">
-          <thead class="thead-light">
-            <tr>
-              <th>День</th>
-              <th>Время</th>
-              <th>Предмет</th>
-              <th>Преподаватель</th>
-              <th>Группа</th>
-              <th>Аудитория</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody id="roomsBody">
-          </tbody>
-        </table>
-      </div>
+  <!-- Контейнер -->
+  <div class="container py-4">
+    <!-- Панель управления -->
+    <div class="controls d-flex justify-content-center align-items-center flex-wrap mb-4">
+      <select id="roomSelect" class="form-select me-2 mb-2" style="min-width: 180px;">
+        <option value="">Кабинет</option>
+      </select>
+      <select id="roomWeekInput" class="form-select me-2 mb-2" style="min-width: 180px;">
+        <option value="">Неделя</option>
+      </select>
+      <button id="loadRoomsBtn" class="btn btn-primary me-2 mb-2" disabled>Показать</button>
+      <button id="addBtn" class="btn btn-success mb-2 d-none">
+        <i class="bi bi-plus-lg"></i> Добавить пару
+      </button>
     </div>
+
+    <!-- Календарь -->
+    <div id="calendar" class="calendar-grid d-none"></div>
   </div>
 
-  <!-- Модальное окно Вход -->
+  <!-- Модалки -->
+  <!-- Вход -->
   <div class="modal fade" id="loginModal" tabindex="-1">
-    <div class="modal-dialog">
-      <div class="modal-content">
-        <div class="modal-header">
-          <h5 class="modal-title">Вход</h5>
-          <button type="button" class="close" data-dismiss="modal">&times;</button>
-        </div>
-        <div class="modal-body">
-          <input id="email" type="email" class="form-control mb-2" placeholder="Email">
-          <input id="password" type="password" class="form-control mb-2" placeholder="Пароль">
-          <span id="loginStatus" class="text-success"></span>
-        </div>
-        <div class="modal-footer">
-          <button id="loginBtn" class="btn btn-primary">Войти</button>
-          <button class="btn btn-secondary" data-dismiss="modal">Отмена</button>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Модальное окно Регистрация -->
-  <div class="modal fade" id="registerModal" tabindex="-1">
-    <div class="modal-dialog">
-      <div class="modal-content">
-        <div class="modal-header">
-          <h5 class="modal-title">Регистрация</h5>
-          <button type="button" class="close" data-dismiss="modal">&times;</button>
-        </div>
-        <div class="modal-body">
-          <input id="regEmail" type="email" class="form-control mb-2" placeholder="Email">
-          <input id="regPassword" type="password" class="form-control mb-2" placeholder="Пароль">
-        </div>
-        <div class="modal-footer">
-          <button id="registerBtn" class="btn btn-secondary">Зарегистрироваться</button>
-          <button class="btn btn-light" data-dismiss="modal">Отмена</button>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Модальное окно добавить пару -->
-  <div class="modal fade" id="addModal" tabindex="-1">
-    <div class="modal-dialog">
-      <div class="modal-content">
-        <div class="modal-header">
-          <h5 id="addModalLabel" class="modal-title">Добавить пару</h5>
-          <button type="button" class="close" data-dismiss="modal">&times;</button>
-        </div>
-        <div class="modal-body">
-          <input id="addGroup" type="text" class="form-control mb-2" placeholder="Группа">
-          <input id="addSubject" type="text" class="form-control mb-2" placeholder="Предмет">
-          <input id="addTeacher" type="text" class="form-control mb-2" placeholder="Преподаватель">
-          <input id="addDate" type="text" class="form-control mb-2" placeholder="Дата">
-          <input id="addStartTime" type="time" class="form-control mb-2">
-          <input id="addEndTime" type="time" class="form-control mb-2">
-        </div>
-        <div class="modal-footer">
-          <button id="addPairBtn" class="btn btn-success">Добавить</button>
-          <button class="btn btn-secondary" data-dismiss="modal">Отмена</button>
-        </div>
-      </div>
-    </div>
-  </div>
-
-<!-- Модальное окно: Пользователи -->
-<div class="modal fade" id="usersModal" tabindex="-1">
-  <div class="modal-dialog modal-lg">
-    <div class="modal-content">
+    <div class="modal-dialog"><div class="modal-content">
       <div class="modal-header">
-        <h5 class="modal-title">Управление пользователями</h5>
-        <button type="button" class="close" data-dismiss="modal">&times;</button>
+        <h5 class="modal-title">Вход</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <input id="email" type="email" class="form-control mb-2" placeholder="Email">
+        <input id="password" type="password" class="form-control mb-2" placeholder="Пароль">
+      </div>
+      <div class="modal-footer">
+        <button id="loginBtn" class="btn btn-primary">Войти</button>
+        <button class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
+      </div>
+    </div></div>
+  </div>
+
+  <!-- Регистрация -->
+  <div class="modal fade" id="registerModal" tabindex="-1">
+    <div class="modal-dialog"><div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Регистрация</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <input id="regEmail" type="email" class="form-control mb-2" placeholder="Email">
+        <input id="regPassword" type="password" class="form-control mb-2" placeholder="Пароль">
+      </div>
+      <div class="modal-footer">
+        <button id="registerBtn" class="btn btn-secondary">Зарегистрироваться</button>
+        <button class="btn btn-light" data-bs-dismiss="modal">Отмена</button>
+      </div>
+    </div></div>
+  </div>
+
+  <!-- Добавить пару -->
+  <div class="modal fade" id="addModal" tabindex="-1">
+    <div class="modal-dialog"><div class="modal-content">
+      <div class="modal-header">
+        <h5 id="addModalLabel" class="modal-title">Добавить пару</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <input id="addGroup" type="text" class="form-control mb-2" placeholder="Группа">
+        <input id="addSubject" type="text" class="form-control mb-2" placeholder="Предмет">
+        <input id="addTeacher" type="text" class="form-control mb-2" placeholder="Преподаватель">
+        <input id="addDate" type="text" class="form-control mb-2" placeholder="Дата">
+        <input id="addStartTime" type="time" class="form-control mb-2">
+        <input id="addEndTime" type="time" class="form-control mb-2">
+      </div>
+      <div class="modal-footer">
+        <button id="addPairBtn" class="btn btn-success">Добавить</button>
+        <button class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
+      </div>
+    </div></div>
+  </div>
+
+  <!-- Редактировать пару -->
+  <div class="modal fade" id="editModal" tabindex="-1">
+    <div class="modal-dialog"><div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Редактировать пару</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+      <div class="modal-body">
+        <input id="editGroup" type="text" class="form-control mb-2" placeholder="Группа">
+        <input id="editSubject" type="text" class="form-control mb-2" placeholder="Предмет">
+        <input id="editTeacher" type="text" class="form-control mb-2" placeholder="Преподаватель">
+        <input id="editDate" type="text" class="form-control mb-2" placeholder="Дата">
+        <input id="editStartTime" type="time" class="form-control mb-2">
+        <input id="editEndTime" type="time" class="form-control mb-2">
+      </div>
+      <div class="modal-footer">
+        <button id="saveEditBtn" class="btn btn-primary">Сохранить</button>
+        <button class="btn btn-secondary" data-bs-dismiss="modal">Отмена</button>
+      </div>
+    </div></div>
+  </div>
+
+  <!-- Управление пользователями -->
+  <div class="modal fade" id="usersModal" tabindex="-1">
+    <div class="modal-dialog modal-lg"><div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Пользователи</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
       <div class="modal-body">
         <table class="table table-striped">
-          <thead>
-            <tr><th>ID</th><th>Email</th><th>Роль</th><th></th></tr>
-          </thead>
-          <tbody id="usersTableBody">
-            <!-- пользователи -->
-          </tbody>
+          <thead><tr><th>ID</th><th>Email</th><th>Роль</th><th></th></tr></thead>
+          <tbody id="usersTableBody"></tbody>
         </table>
       </div>
-    </div>
+    </div></div>
   </div>
-</div>
 
-<script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
-
-<!-- jQuery UI -->
-<script src="https://code.jquery.com/ui/1.13.2/jquery-ui.min.js"></script>
-
-<script src="https://cdnjs.cloudflare.com/ajax/libs/jqueryui/1.13.2/i18n/jquery-ui-i18n.min.js"></script>
-
-<!-- Bootstrap -->
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@4.6.2/dist/js/bootstrap.bundle.min.js"></script>
-
-<!-- Axios -->
-<script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
-
-<!-- Твой скрипт -->
-<script src="script.js"></script>
-
+  <!-- Скрипты -->
+  <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
+  <script src="https://code.jquery.com/ui/1.13.2/jquery-ui.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+  <script src="script.js"></script>
 </body>
 </html>

@@ -154,10 +154,7 @@ python parser.py --weeks 1,2,3
 ````
 # 5. Start API server
 ````
-cd ../api
-````
-````
-python -m routes
+python -m backend.api.routes
 ````
 
 # 6. Open frontend

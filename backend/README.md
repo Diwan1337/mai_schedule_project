@@ -103,12 +103,8 @@
 3. Запуск API-сервера на порту 5000:
 
    ```bash
-   cd backend/api
+   python -m backend.api.routes
    ```
-   ```
-   python routes
-   ```
-
 ---
 
 ## Лицензия

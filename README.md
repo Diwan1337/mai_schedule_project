@@ -157,9 +157,12 @@ python parser.py --weeks 1,2,3
 python -m backend.api.routes
 ````
 
-# 6. Open frontend
+# 6. Open frontend and start frontend
 ````
 cd ../../frontend
+````
+````
+python -m http.server 8000
 ````
 # Simply open index.html in your browser (it calls API on 127.0.0.1:5000)
 

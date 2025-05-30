@@ -21,14 +21,7 @@ from backend.api.google_sync import (
     ensure_google_event_id_column
 )
 
-import os
-FRONTEND_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../frontend'))
-app = Flask(
-    __name__,
-    static_folder=FRONTEND_DIR,
-    static_url_path=''
-)
-
+app = Flask(__name__, static_folder='static', template_folder='templates')
 CORS(app)
 
 ACADEMIC_WEEK_OFFSET = 6
@@ -99,11 +92,6 @@ def jwt_required():
 
 def get_jwt_identity():
     return getattr(g, "current_user", None)
-
-
-@app.route('/')
-def serve_index():
-    return app.send_static_file('index.html')
 
 
 # ——— User registration and login ———
@@ -386,5 +374,5 @@ def allowed_rooms():
 
 
 if __name__ == "__main__":
-    # host='0.0.0.0' позволяет принимать запросы с любого IP
-    app.run(host='0.0.0.0', port=5000, debug=False, use_reloader=False)
+    # Disable reloader to avoid double initAdd commentMore actions
+    app.run(debug=False, use_reloader=False, port=5000)

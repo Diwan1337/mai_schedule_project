@@ -54,7 +54,7 @@ mai_schedule_project/
 │   │   ├── google_sync.py      # • Calendar insert/update/delete  
 │   │   └── delete_events.py    # • Bulk-delete helper  
 │   │
-│   └── notifier/               # 🔔 (future) email/push notifications
+│   └── notifier/               # 🔔 (future) push notifications
 │
 ├── frontend/                   # 🌐 Single-Page App
 │   ├── index.html              # • React-free HTML + Bootstrap  
